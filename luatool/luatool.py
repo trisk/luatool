@@ -19,6 +19,7 @@
 
 import sys
 import serial
+import socket
 from time import sleep
 import argparse
 from os.path import basename
@@ -27,19 +28,29 @@ from os.path import basename
 version = "0.6.3"
 
 
-def writeln(data, check=1):
-    if s.inWaiting() > 0:
+def readdata(s, size):
+    if s.__class__.__name__  == '_socketobject':
+        return s.recv(size)
+    return s.read(size)
+
+def writedata(s, data):
+    if s.__class__.__name__  == '_socketobject':
+        return s.sendall(data)
+    return s.write(data)
+
+def writeln(s, data, check=1):
+    if s.__class__.__name__  != '_socketobject' and s.inWaiting() > 0:
         s.flushInput()
     if len(data) > 0:
         sys.stdout.write("\r\n->")
         sys.stdout.write(data.split("\r")[0])
-    s.write(data)
+    writedata(s, data)
     sleep(0.3)
     if check > 0:
         line = ''
         char = ''
         while char != chr(62):  # '>'
-            char = s.read(1)
+            char = readdata(s, 1)
             if char == '':
                 raise Exception('No proper answer from MCU')
             if char == chr(13) or char == chr(10):  # LF or CR
@@ -66,9 +77,34 @@ def writeln(data, check=1):
         sys.stdout.write(" -> send without check")
 
 
-def writer(data):
-    writeln("file.writeline([==[" + data + "]==])\r")
+def writer(s, data):
+    writeln(s, "file.writeline([==[" + data + "]==])\r")
 
+
+def openremote(args):
+    host = ''
+    port = ''
+    portnum = 0
+    # Look for host:port first
+    try:
+	(host, port) = args.addr.split(':')
+    except ValueError:
+        host = args.addr
+        port = args.port
+    try:
+        portnum = int(port)
+    except ValueError:
+        sys.stderr.write("Invalid port number %s\n" % port)
+        sys.exit(1)
+
+    # Open a connection
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.connect((host, portnum))
+    except:
+        sys.stderr.write("Could not connect to %s:%d\n" %s (host, portnum))
+        sys.exit(1)
+    return s
 
 def openserial(args):
     # Open the selected serial port
@@ -85,11 +121,17 @@ def openserial(args):
     s.interCharTimeout = 3
     return s
 
+def opendevice(args):
+    if args.addr != None:
+        return openremote(args)
+    else:
+        return openserial(args)
 
 if __name__ == '__main__':
     # parse arguments or use defaults
     parser = argparse.ArgumentParser(description='ESP8266 Lua script uploader.')
-    parser.add_argument('-p', '--port',    default='/dev/ttyUSB0', help='Device name, default /dev/ttyUSB0')
+    parser.add_argument('-a', '--addr',    default=None,           help='Remote device address')
+    parser.add_argument('-p', '--port',    default='/dev/ttyUSB0', help='Device name or port number, default /dev/ttyUSB0')
     parser.add_argument('-b', '--baud',    default=9600,           help='Baudrate, default 9600')
     parser.add_argument('-f', '--src',     default='main.lua',     help='Source file on computer, default main.lua')
     parser.add_argument('-t', '--dest',    default=None,           help='Destination file on MCU, default to source file name')
@@ -102,22 +144,23 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.list:
-        s = openserial(args)
-        writeln("local l = file.list();for k,v in pairs(l) do print('name:'..k..', size:'..v)end\r", 0)
+        s = opendevice(args)
+
+        writeln(s, "local l = file.list();for k,v in pairs(l) do print('name:'..k..', size:'..v)end\r", 0)
         while True:
-            char = s.read(1)
+            char = readdata(s, 1)
             if char == '' or char == chr(62):
                 break
             sys.stdout.write(char)
         sys.exit(0)
 
     if args.wipe:
-        s = openserial(args)
-        writeln("local l = file.list();for k,v in pairs(l) do print(k)end\r", 0)
+        s = opendevice(args)
+        writeln(s, "local l = file.list();for k,v in pairs(l) do print(k)end\r", 0)
         file_list = []
         fn = ""
         while True:
-            char = s.read(1)
+            char = readdata(s, 1)
             if char == '' or char == chr(62):
                 break
             if char not in ['\r', '\n']:
@@ -129,7 +172,7 @@ if __name__ == '__main__':
         for fn in file_list[1:]:  # first line is the list command sent to device
             if args.verbose:
                 sys.stderr.write("Delete file {} from device.\r\n".format(fn))
-            writeln("file.remove(\"" + fn + "\")\r")
+            writeln(s, "file.remove(\"" + fn + "\")\r")
         sys.exit(0)
 
     if args.dest is None:
@@ -157,8 +200,8 @@ if __name__ == '__main__':
     # line length
     f.seek(0)
 
-    # Open the selected serial port
-    s = openserial(args)
+    # Open the selected serial port or address
+    s = opendevice(args)
 
     # set serial timeout
     if args.verbose:
@@ -167,43 +210,44 @@ if __name__ == '__main__':
     # remove existing file on device
     if args.verbose:
         sys.stderr.write("Stage 1. Deleting old file from flash memory")
-    writeln("file.open(\"" + args.dest + "\", \"w\")\r")
-    writeln("file.close()\r")
-    writeln("file.remove(\"" + args.dest + "\")\r")
+    writeln(s, "file.open(\"" + args.dest + "\", \"w\")\r")
+    writeln(s, "file.close()\r")
+    writeln(s, "file.remove(\"" + args.dest + "\")\r")
 
     # read source file line by line and write to device
     if args.verbose:
         sys.stderr.write("\r\nStage 2. Creating file in flash memory and write first line")
-    writeln("file.open(\"" + args.dest + "\", \"w+\")\r")
+    writeln(s, "file.open(\"" + args.dest + "\", \"w+\")\r")
     line = f.readline()
     if args.verbose:
         sys.stderr.write("\r\nStage 3. Start writing data to flash memory...")
     while line != '':
-        writer(line.strip())
+        writer(s, line.strip())
         line = f.readline()
 
     # close both files
     f.close()
     if args.verbose:
         sys.stderr.write("\r\nStage 4. Flush data and closing file")
-    writeln("file.flush()\r")
-    writeln("file.close()\r")
+    writeln(s, "file.flush()\r")
+    writeln(s, "file.close()\r")
 
     # compile?
     if args.compile:
         if args.verbose:
             sys.stderr.write("\r\nStage 5. Compiling")
-        writeln("node.compile(\"" + args.dest + "\")\r")
-        writeln("file.remove(\"" + args.dest + "\")\r")
+        writeln(s, "node.compile(\"" + args.dest + "\")\r")
+        writeln(s, "file.remove(\"" + args.dest + "\")\r")
 
     # restart or dofile
     if args.restart:
-        writeln("node.restart()\r")
+        writeln(s, "node.restart()\r")
     if args.dofile:   # never exec if restart=1
-        writeln("dofile(\"" + args.dest + "\")\r", 0)
+        writeln(s, "dofile(\"" + args.dest + "\")\r", 0)
 
-    # close serial port
-    s.flush()
+    # close serial port or socket
+    if args.addr == None:
+        s.flush()
     s.close()
 
     # flush screen
