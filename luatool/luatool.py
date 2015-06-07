@@ -87,7 +87,7 @@ def openremote(args):
     portnum = 0
     # Look for host:port first
     try:
-	(host, port) = args.addr.split(':')
+        (host, port) = args.addr.split(':')
     except ValueError:
         host = args.addr
         port = args.port
@@ -102,7 +102,7 @@ def openremote(args):
     try:
         s.connect((host, portnum))
     except:
-        sys.stderr.write("Could not connect to %s:%d\n" %s (host, portnum))
+        sys.stderr.write("Could not connect to %s:%d\n" % (host, portnum))
         sys.exit(1)
     return s
 
