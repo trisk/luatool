@@ -42,8 +42,8 @@ def writeln(s, data, check=1):
     if s.__class__.__name__  != '_socketobject' and s.inWaiting() > 0:
         s.flushInput()
     if len(data) > 0:
-        sys.stdout.write("\r\n->")
-        sys.stdout.write(data.split("\r")[0])
+        sys.stderr.write("\r\n->")
+        sys.stderr.write(data.split("\r")[0])
     writedata(s, data)
     sleep(0.3)
     if check > 0:
@@ -57,24 +57,24 @@ def writeln(s, data, check=1):
                 if line != '':
                     line = line.strip()
                     if line+'\r' == data:
-                        sys.stdout.write(" -> ok")
+                        sys.stderr.write(" -> ok")
                     else:
                         if line[:4] == "lua:":
-                            sys.stdout.write("\r\n\r\nLua ERROR: %s" % line)
+                            sys.stderr.write("\r\n\r\nLua ERROR: %s" % line)
                             raise Exception('ERROR from Lua interpreter\r\n\r\n')
                         else:
                             data = data.split("\r")[0]
-                            sys.stdout.write("\r\n\r\nERROR")
-                            sys.stdout.write("\r\n send string    : '%s'" % data)
-                            sys.stdout.write("\r\n expected echo  : '%s'" % data)
-                            sys.stdout.write("\r\n but got answer : '%s'" % line)
-                            sys.stdout.write("\r\n\r\n")
+                            sys.stderr.write("\r\n\r\nERROR")
+                            sys.stderr.write("\r\n send string    : '%s'" % data)
+                            sys.stderr.write("\r\n expected echo  : '%s'" % data)
+                            sys.stderr.write("\r\n but got answer : '%s'" % line)
+                            sys.stderr.write("\r\n\r\n")
                             raise Exception('Error sending data to MCU\r\n\r\n')
                     line = ''
             else:
                 line += char
     else:
-        sys.stdout.write(" -> send without check\r\n")
+        sys.stderr.write(" -> send without check\r\n")
 
 
 def writer(s, data):
