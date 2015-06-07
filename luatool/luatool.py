@@ -74,7 +74,7 @@ def writeln(s, data, check=1):
             else:
                 line += char
     else:
-        sys.stdout.write(" -> send without check")
+        sys.stdout.write(" -> send without check\r\n")
 
 
 def writer(s, data):
