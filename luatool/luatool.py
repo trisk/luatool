@@ -97,9 +97,55 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--restart', action='store_true',    help='Restart MCU after upload')
     parser.add_argument('-d', '--dofile',  action='store_true',    help='Run the Lua script after upload')
     parser.add_argument('-v', '--verbose', action='store_true',    help="Show progress messages.")
+    parser.add_argument('-g', '--get',     default=None,           help='Get contents of specified file on MCU')
     parser.add_argument('-l', '--list',    action='store_true',    help='List files on device')
     parser.add_argument('-w', '--wipe',    action='store_true',    help='Delete all lua/lc files on device.')
     args = parser.parse_args()
+
+    if args.get:
+        s = opendevice(args)
+
+        writeln(s, "=file.open('" + args.get + "', 'r')\r", 0)
+        line = ""
+        while True:
+            char = readdata(s, 1)
+            if char == '' or char == chr(62):
+                break
+            line += char
+
+        if char == chr(62):
+            char = readdata(s, 1)
+
+        line = line.strip()
+        if line == "nil":
+            sys.stderr.write("File %s does not exist on device\n" % args.get)
+            sys.exit(1)
+        if line != "true":
+            raise Exception('No proper answer from MCU')
+
+        # file.readline() includes trailing newlines so they are doubled
+        # detect EOF as "nil" followed by single newline and prompt (prompt could appear elsewhere)
+        writeln(s, "local l; repeat l = file.readline(); print(l) until l == nil;file.close()\r", 0)
+
+        line = ""
+        while True:
+            char = readdata(s, 1)
+            if char == '':
+                break
+            if char == chr(13) or char == chr(10):  # LF or CR
+                prevch = char
+
+                # Must be a second newline if still printing the file
+                char = readdata(s, 1)
+                if prevch != char:  # EOF, skip previous line ("nil")
+                    break
+
+                sys.stdout.write(line + prevch)
+                line = ""
+                continue
+
+            line += char
+        sys.exit(0)
 
     if args.list:
         s = openserial(args)
